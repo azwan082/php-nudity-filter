@@ -8,10 +8,11 @@ define('ROOT', dirname(__FILE__));
 require_once ROOT . DS . 'NudityFilter.class.php';
 
 $nf = new NudityFilter();
-$sample = ROOT . DS . 'sample' . DS . 'girl_sf2pe7o7.gif';
+//$sample = ROOT . DS . 'sample' . DS . 'girl_sf2pe7o7.gif';
+$sample = ROOT . DS . 'sample' . DS . '4.jpg';
 if ($nf->check($sample)) {
-    //echo 'nude picture!';
+    echo 'nude picture!';
 } else {
-    //echo 'no nude..';
+    echo 'no nude..';
 }
 ?>
