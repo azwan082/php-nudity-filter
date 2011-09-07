@@ -1,4 +1,6 @@
 php-nudity-filter is PHP port of nude.js by Patrick Wied at https://github.com/pa7/nude.js
 
-Note: This PHP class still in development (not complete), and still not optimized for PHP as it 
-directly translate the data structure in JS into PHP
+Note: This class is not fully optimized, and some feature missing if compared to the
+original JS. When these feature added, there's some performance degrade will occur.
+However, the porting phase is complete, and it still needs some optimization and
+further tests

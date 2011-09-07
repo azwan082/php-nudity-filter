@@ -66,7 +66,9 @@ class NudityFilter {
                 if ($this->classify_skin($r, $g, $b)) {
                     $this->pixel_map[$i] = 0; // pixel_map stores `region` value of the skin pixel
                     $region = -1;
-                    $check_pixels = array($i-1, ($i-$this->img_w)-1, $i-$this->img_w, ($i-$this->img_w)+1); // left, above left, above, above right pixel relative to current pixel
+                    // check neighbouring pixels for skin pixel, if one of them is skin pixel, all subsequent pixels will be labelled as skin pixel
+                    // left, above left, above, above right pixel relative to current pixel (order of checking is important)
+                    $check_pixels = array($i-1, ($i-$this->img_w)-1, $i-$this->img_w, ($i-$this->img_w)+1);
                     foreach ($check_pixels as $cpx) {
                         if (isset($this->pixel_map[$cpx])) {
                             if ($this->pixel_map[$cpx] != $region && $region != -1 && $this->last_from != $region && $this->last_to != $this->pixel_map[$cpx]) {
@@ -77,6 +79,8 @@ class NudityFilter {
                         }
                     }
                     if ($skin_px) {
+                        // one of neighbouring pixel is skin pixel, so need to update current pixel region
+                        // to that neighbour pixel region number
                         if ($region > -1) {
                             if (!isset($this->detected_regions[$region])) {
                                 $this->detected_regions[$region] = array();
@@ -85,6 +89,7 @@ class NudityFilter {
                             $this->detected_regions[$region][] = $this->pixel_map[$i];
                         }
                     } else {
+                        // append new region number to this pixel
                         $this->pixel_map[$i] = count($this->detected_regions);
                         $this->detected_regions[] = array($this->pixel_map[$i]);
                     }
@@ -99,10 +104,13 @@ class NudityFilter {
         $this->merge_and_clear();
         $this->log[] = 'Finish merge_and_clear() in '.number_format(microtime(true) - $start, 4). ' secs';
         $result = $this->analyze_regions();
-        $this->log[] = 'Processed complete in '.number_format(microtime(true) - $start, 4). ' secs';
+        $this->log[] = 'Process completed in '.number_format(microtime(true) - $start, 4). ' secs';
         return $result;
     }
 
+    /**
+     * Reset class variables for current checking process
+     */
     private function reset_var() {
         $this->filename = basename($this->file);
         $this->last_from = -1;
@@ -114,7 +122,15 @@ class NudityFilter {
         $this->error = '';
     }
 
+    /**
+     * Determine if current pixel is a skin pixel
+     * @param int $r `red` color component
+     * @param int $g `green` color component
+     * @param int $b `blue` color component
+     * @return bool True if this pixel is a skin pixel
+     */
     private function classify_skin($r, $g, $b) {
+        // A Survey on Pixel-Based Skin Color Detection Techniques
         $rgb_classifier = (($r>95) && ($g>40 && $g <100) && ($b>20) && ((max($r,$g,$b) - min($r,$g,$b)) > 15) && (abs($r-$g)>15) && ($r > $g) && ($r > $b));
         // normalize rgb
         $sum = $r+$g+$b;
@@ -127,6 +143,13 @@ class NudityFilter {
         return ($rgb_classifier || $norm_rgb_classifier || $hsv_classifier);
     }
 
+    /**
+     * Convert RGB value to HSV
+     * @param int $r `red` color component
+     * @param int $g `green` color component
+     * @param int $b `blue` color component
+     * @return array HSV component
+     */
     private function to_hsv($r, $g, $b) {
         $h = 0;
         $mx = max($r, $g, $b);
@@ -197,6 +220,10 @@ class NudityFilter {
         }
     }
 
+    /**
+     * Get merge_regions pixel data, get only regions of certain size and store to skin_regions
+     * data in skin_regions will be used to determine if picture contains nudity or not
+     */
     private function merge_and_clear() {
         $det_regions = array();
         $this->skin_regions = array();
