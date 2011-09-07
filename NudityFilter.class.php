@@ -45,6 +45,7 @@ class NudityFilter {
             echo 'Failed to read image file';
             return false;
         }
+        echo 'Finish reading image file in '.number_format(microtime(true) - $start, 4). ' secs<br>';
         // iterate image from top left to bottom right
         $x = 0;
         $y = 0;
@@ -59,29 +60,29 @@ class NudityFilter {
                 $skin_px = false;
 //                echo '$pixel_map['.$i.'] = ('.$x.', '.$y.')<br>';
                 if ($this->classify_skin($r, $g, $b)) {
-                    $this->pixel_map[$i] = array(
-                        'id' => $i,
-                        'skin' => true,
-                        'region' => 0,
-                        'x' => $x,
-                        'y' => $y
-                    );
+                    $this->pixel_map[$i] = 0; //array(
+//                        'id' => $i,
+//                        'skin' => true,
+//                        'region' => 0,
+//                        'x' => $x,
+//                        'y' => $y
+//                    );
                     $region = -1;
                     $check_pixels = array($i-1, ($i-$this->img_w)-1, $i-$this->img_w, ($i-$this->img_w)+1); // left, above left, above, above right pixel relative to current pixel
 //                    echo '&nbsp;&nbsp;&nbsp;&nbsp;';
 //                    echo '$check_pixels: array(';foreach($check_pixels as $chk)echo $chk.',';echo ')<br>';
                     foreach ($check_pixels as $cpx) {
-                        if (isset($this->pixel_map[$cpx]) && $this->pixel_map[$cpx]['skin']) {
+                        if (isset($this->pixel_map[$cpx])) {
 //                            echo '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;';
 //                            echo 'pixel_map['.$cpx.'][skin]='.$this->pixel_map[$cpx]['skin'].', ';
 //                            echo 'pixel_map['.$cpx.'][region]='.$this->pixel_map[$cpx]['region'].', ';
 //                            echo 'region='.$region.', ';
 //                            echo 'last_from='.$this->last_from.', ';
 //                            echo 'last_to='.$this->last_to.'<br>';
-                            if ($this->pixel_map[$cpx]['region'] != $region && $region != -1 && $this->last_from != $region && $this->last_to != $this->pixel_map[$cpx]['region']) {
-                                $this->add_merge_region($region, $this->pixel_map[$cpx]['region']);
+                            if ($this->pixel_map[$cpx] != $region && $region != -1 && $this->last_from != $region && $this->last_to != $this->pixel_map[$cpx]) {
+                                $this->add_merge_region($region, $this->pixel_map[$cpx]);
                             }
-                            $region = $this->pixel_map[$cpx]['region'];
+                            $region = $this->pixel_map[$cpx];
                             $skin_px = true;
                         }
                     }
@@ -91,23 +92,23 @@ class NudityFilter {
                             if (!isset($this->detected_regions[$region])) {
                                 $this->detected_regions[$region] = array();
                             }
-                            $this->pixel_map[$i]['region'] = $region;
+                            $this->pixel_map[$i] = $region;
                             $this->detected_regions[$region][] = $this->pixel_map[$i];
 //                            echo 'skin_px=True, pixel_map['.$i.'], pushed to detected_regions['.$region.']<br>';
                         }
                     } else {
-                        $this->pixel_map[$i]['region'] = count($this->detected_regions);
+                        $this->pixel_map[$i] = count($this->detected_regions);
                         $this->detected_regions[] = array($this->pixel_map[$i]);
 //                        echo 'skin_px=False, pixel_map['.$i.'], pushed as new item to detected_regions (index: '.(count($this->detected_regions)-1).')<br>';
                     }
                 } else {
-                    $this->pixel_map[$i] = array(
-                        'id' => $i,
-                        'skin' => false,
-                        'region' => 0,
-                        'x' => $x,
-                        'y' => $y
-                    );
+//                    $this->pixel_map[$i] = array(
+//                        'id' => $i,
+//                        'skin' => false,
+//                        'region' => 0,
+//                        'x' => $x,
+//                        'y' => $y
+//                    );
                 }
                 $x++;
                 $i++;
@@ -115,7 +116,14 @@ class NudityFilter {
             $x = 0;
             $y++;
         }
+        echo 'Finish reading all pixels in '.number_format(microtime(true) - $start, 4). ' secs<br>';
+//        echo 'merge_regions:<br>';
+//        foreach ($this->merge_regions as $i => $mr) {
+//            echo $i.' => ';var_dump($mr);echo '<br>';
+//        }
+//        exit;
         $this->merge_and_clear();
+        echo 'Finish merge_and_clear() in '.number_format(microtime(true) - $start, 4). ' secs<br>';
         // <!-- TEST
 //        echo 'det_regions:<br>';
 //        foreach ($this->det_regions as $m => $dt) {
@@ -128,10 +136,6 @@ class NudityFilter {
 ////                echo '<br>';
 //            }
 //            echo'<br>';
-//        }
-//        echo 'merge_regions:<br>';
-//        foreach ($this->merge_regions as $i => $mr) {
-//            echo $i.' => ';var_dump($mr);echo '<br>';
 //        }
 //        echo 'detected_regions:<br>';
 //        foreach ($this->detected_regions as $j => $dr) {
@@ -150,9 +154,10 @@ class NudityFilter {
 //        foreach ($this->pixel_map as $j => $px) {
 //            echo $j.' => ';var_dump($px);echo'<br>';
 //        }
-        echo 'Processed in '.number_format(microtime(true) - $start, 4). ' secs';
         // TEST -->
-        return $this->analyze_regions();
+        $result = $this->analyze_regions();
+        echo 'Processed complete in '.number_format(microtime(true) - $start, 4). ' secs';
+        return $result;
     }
 
     private function classify_skin($r, $g, $b) {
@@ -266,9 +271,11 @@ class NudityFilter {
                 $this->det_regions[$i] = array();
             }
             foreach ($mr as $m) {
-                $this->det_regions[$i] = array_merge($this->det_regions[$i], $this->detected_regions[$m]);
-                $this->detected_regions[$m] = array();
-//                unset($this->detected_regions[$m]); // error: max execution time 60 secs
+                if (!empty($this->detected_regions[$m])) {
+                    $this->det_regions[$i] = array_merge($this->det_regions[$i], $this->detected_regions[$m]);
+//                    $this->detected_regions[$m] = array();
+                }
+                unset($this->detected_regions[$m]); // error: max execution time 60 secs
             }
         }
         if (!empty($this->detected_regions)) {
@@ -278,8 +285,9 @@ class NudityFilter {
         }
         // only pushes regions which are bigger than a specific amount to the final result
         foreach ($this->det_regions as $dt) {
-            if (count($dt) > 30) {
-                $this->skin_regions[] = $dt;
+            $count_dt = count($dt);
+            if ($count_dt > 30) {
+                $this->skin_regions[] = $count_dt;
             }
         }
     }
@@ -293,17 +301,15 @@ class NudityFilter {
         if (count($this->skin_regions) < 3) {
             return false;
         }
-        function bsort($a,$b){
-            return count($b)-count($a);
-        }
         // sort the detected regions by size
-        usort($this->skin_regions, 'bsort');
+//        usort($this->skin_regions, 'bsort');
+        rsort($this->skin_regions);
         $total_pixel = $this->img_w * $this->img_h;
-        $total_skin = 0;
+        $total_skin = array_sum($this->skin_regions);
         // count total skin pixels
-        foreach ($this->skin_regions as $sr) {
-            $total_skin += count($sr);
-        }
+//        foreach ($this->skin_regions as $sr) {
+//            $total_skin += count($sr);
+//        }
         // check if there are more than 15% skin pixel in the image
         if (($total_skin/$total_pixel)*100 < 15) {
             return false;
@@ -311,13 +317,13 @@ class NudityFilter {
         // check if the largest skin region is less than 35% of the total skin count
         // AND if the second largest region is less than 30% of the total skin count
         // AND if the third largest region is less than 30% of the total skin count
-        if ((count($this->skin_regions[0])/$total_skin)*100 < 35
-            && (count($this->skin_regions[1])/$total_skin)*100 < 30
-            && (count($this->skin_regions[2])/$total_skin)*100 < 30) {
+        if (($this->skin_regions[0]/$total_skin)*100 < 35
+            && ($this->skin_regions[1]/$total_skin)*100 < 30
+            && ($this->skin_regions[2]/$total_skin)*100 < 30) {
             return false;
         }
         // check if the number of skin pixels in the largest region is less than 45% of the total skin count
-        if ((count($this->skin_regions[0])/$total_skin)*100 < 45) {
+        if (($this->skin_regions[0]/$total_skin)*100 < 45) {
             return false;
         }
         // @todo:
