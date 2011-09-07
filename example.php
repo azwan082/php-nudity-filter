@@ -17,5 +17,8 @@ $sample = array(
 );
 foreach ($sample as $sp) {
     echo '<p>'. basename($sp) .' - '. (($nf->check($sp)) ? 'nude picture!' : 'no nude..') . '</p>';
+    foreach ($nf->log as $log) {
+        echo $log.'<br>';
+    }
 }
 ?>

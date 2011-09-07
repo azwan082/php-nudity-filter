@@ -2,24 +2,30 @@
 
 class NudityFilter {
 
-    var $file, $img_w, $img_h, $last_from, $last_to, $pixel_map, $merge_regions,
-        $detected_regions, $det_regions, $skin_regions;
+    var $file, // full path of image file
+        $filename, // image file name
+        $img_w, // image width
+        $img_h, // image height
+        $last_from, // previous `from` region number
+        $last_to, // previous `to` region number
+        $pixel_map, // array of skin pixel holding region number
+        $merge_regions, // array of pixel number which are merged in a region
+        $detected_regions, // array of skin pixel for arranging region number
+        $skin_regions, // array of skin regions, store number of pixels in a region
+        $error, // last error message
+        $log; // array of log message
 
     /**
      * @return bool True if it is nude picture
      */
     function check($file) {
         $this->file = $file;
-        $this->last_from = -1;
-        $this->last_to = -1;
-        $this->pixel_map = array();
-        $this->merge_regions = array();
-        $this->detected_regions = array();
+        $this->reset_var();
         // get image info
         $start = microtime(true);
         $img_info = getimagesize($this->file);
         if ($img_info === false) {
-            echo $this->file.' is not an image file';
+            $this->error = $this->filename .' is not an image file';
             return false;
         }
         $this->img_w = $img_info[0];
@@ -38,19 +44,18 @@ class NudityFilter {
                 $img = imagecreatefrompng($this->file);
                 break;
             default:
-                echo 'Unsupported image type';
+                $this->error = 'Unsupported image type ('. $this->filename . ')';
                 return false;
         }
         if ($img === false) {
-            echo 'Failed to read image file';
+            $this->error = 'Failed to read image file ('. $this->filename .')';
             return false;
         }
-        echo 'Finish reading image file in '.number_format(microtime(true) - $start, 4). ' secs<br>';
+        $this->log[] = 'Finish reading image file in '.number_format(microtime(true) - $start, 4). ' secs';
         // iterate image from top left to bottom right
         $x = 0;
         $y = 0;
         $i = 0;
-        //echo "image dim: $img_w x $img_h<br>total pixels: ".($img_w * $img_h)."<br>";
         while ($y < $this->img_h) {
             while ($x < $this->img_w) {
                 $rgb = imagecolorat($img, $x, $y);
@@ -58,27 +63,12 @@ class NudityFilter {
                 $g = ($rgb >> 8) & 0xFF;
                 $b = $rgb & 0xFF;
                 $skin_px = false;
-//                echo '$pixel_map['.$i.'] = ('.$x.', '.$y.')<br>';
                 if ($this->classify_skin($r, $g, $b)) {
-                    $this->pixel_map[$i] = 0; //array(
-//                        'id' => $i,
-//                        'skin' => true,
-//                        'region' => 0,
-//                        'x' => $x,
-//                        'y' => $y
-//                    );
+                    $this->pixel_map[$i] = 0; // pixel_map stores `region` value of the skin pixel
                     $region = -1;
                     $check_pixels = array($i-1, ($i-$this->img_w)-1, $i-$this->img_w, ($i-$this->img_w)+1); // left, above left, above, above right pixel relative to current pixel
-//                    echo '&nbsp;&nbsp;&nbsp;&nbsp;';
-//                    echo '$check_pixels: array(';foreach($check_pixels as $chk)echo $chk.',';echo ')<br>';
                     foreach ($check_pixels as $cpx) {
                         if (isset($this->pixel_map[$cpx])) {
-//                            echo '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;';
-//                            echo 'pixel_map['.$cpx.'][skin]='.$this->pixel_map[$cpx]['skin'].', ';
-//                            echo 'pixel_map['.$cpx.'][region]='.$this->pixel_map[$cpx]['region'].', ';
-//                            echo 'region='.$region.', ';
-//                            echo 'last_from='.$this->last_from.', ';
-//                            echo 'last_to='.$this->last_to.'<br>';
                             if ($this->pixel_map[$cpx] != $region && $region != -1 && $this->last_from != $region && $this->last_to != $this->pixel_map[$cpx]) {
                                 $this->add_merge_region($region, $this->pixel_map[$cpx]);
                             }
@@ -86,7 +76,6 @@ class NudityFilter {
                             $skin_px = true;
                         }
                     }
-//                    echo '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;';
                     if ($skin_px) {
                         if ($region > -1) {
                             if (!isset($this->detected_regions[$region])) {
@@ -94,21 +83,11 @@ class NudityFilter {
                             }
                             $this->pixel_map[$i] = $region;
                             $this->detected_regions[$region][] = $this->pixel_map[$i];
-//                            echo 'skin_px=True, pixel_map['.$i.'], pushed to detected_regions['.$region.']<br>';
                         }
                     } else {
                         $this->pixel_map[$i] = count($this->detected_regions);
                         $this->detected_regions[] = array($this->pixel_map[$i]);
-//                        echo 'skin_px=False, pixel_map['.$i.'], pushed as new item to detected_regions (index: '.(count($this->detected_regions)-1).')<br>';
                     }
-                } else {
-//                    $this->pixel_map[$i] = array(
-//                        'id' => $i,
-//                        'skin' => false,
-//                        'region' => 0,
-//                        'x' => $x,
-//                        'y' => $y
-//                    );
                 }
                 $x++;
                 $i++;
@@ -116,48 +95,23 @@ class NudityFilter {
             $x = 0;
             $y++;
         }
-        echo 'Finish reading all pixels in '.number_format(microtime(true) - $start, 4). ' secs<br>';
-//        echo 'merge_regions:<br>';
-//        foreach ($this->merge_regions as $i => $mr) {
-//            echo $i.' => ';var_dump($mr);echo '<br>';
-//        }
-//        exit;
+        $this->log[] = 'Finish reading all pixels in '.number_format(microtime(true) - $start, 4). ' secs';
         $this->merge_and_clear();
-        echo 'Finish merge_and_clear() in '.number_format(microtime(true) - $start, 4). ' secs<br>';
-        // <!-- TEST
-//        echo 'det_regions:<br>';
-//        foreach ($this->det_regions as $m => $dt) {
-//            echo $m.' =><br>';//var_dump($dt);
-//            foreach ($dt as $d => $t) {
-//                echo '&nbsp;&nbsp;&nbsp;&nbsp;'.$d.' => ';var_dump($t);echo '<br>';
-////                foreach ($t as $_d => $_t) {
-////                    echo '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'.$_d.' => ';var_dump($_t);echo '<br>';
-////                }
-////                echo '<br>';
-//            }
-//            echo'<br>';
-//        }
-//        echo 'detected_regions:<br>';
-//        foreach ($this->detected_regions as $j => $dr) {
-//            //echo $j.' => '.gettype($dr).' ('.count($dr).')<br>';
-//            echo $j.' => ';var_dump($dr);echo ')<br>';
-//        }
-//        echo 'skin_regions: array('.count($this->skin_regions).')<br>';
-//        foreach ($this->skin_regions as $j => $sr) {
-//            echo $j.' => array('.count($sr).')<br>';
-//            foreach ($sr as $s => $r) {
-//                echo '&nbsp;&nbsp;&nbsp;&nbsp;'.$s.' => ';var_dump($r);echo '<br>';
-//            }
-//            echo'<br>';
-//        }
-//        echo 'pixel_map:<br>';
-//        foreach ($this->pixel_map as $j => $px) {
-//            echo $j.' => ';var_dump($px);echo'<br>';
-//        }
-        // TEST -->
+        $this->log[] = 'Finish merge_and_clear() in '.number_format(microtime(true) - $start, 4). ' secs';
         $result = $this->analyze_regions();
-        echo 'Processed complete in '.number_format(microtime(true) - $start, 4). ' secs';
+        $this->log[] = 'Processed complete in '.number_format(microtime(true) - $start, 4). ' secs';
         return $result;
+    }
+
+    private function reset_var() {
+        $this->filename = basename($this->file);
+        $this->last_from = -1;
+        $this->last_to = -1;
+        $this->pixel_map = array();
+        $this->merge_regions = array();
+        $this->detected_regions = array();
+        $this->log = array();
+        $this->error = '';
     }
 
     private function classify_skin($r, $g, $b) {
@@ -166,26 +120,12 @@ class NudityFilter {
         $sum = $r+$g+$b;
         $nr = $this->div($r,$sum);
         $ng = $this->div($g,$sum);
-//        if ($ng != 0) { // avoid div by zero
-//            $nr_ng = ($nr/$ng);
-//        } else {
-//            // in JS, div by zero is Infinity, so the value is large than any number ($nr_ng>1.185 is always true)
-//            // here we set to a value that later will make sure the logic will return true ($nr_ng>1.185)
-//            $nr_ng = 2;
-//        }
         $norm_rgb_classifier = (($this->div($nr,$ng)>1.185) && ($this->div(($r*$b),(pow($r+$g+$b,2))) > 0.107) && ($this->div(($r*$g),(pow($r+$g+$b,2))) > 0.112));
         // to hsv
         list($h, $s) = $this->to_hsv($r, $g, $b);
         $hsv_classifier = ($h > 0 && $h < 35 && $s > 0.23 && $s < 0.68);
         return ($rgb_classifier || $norm_rgb_classifier || $hsv_classifier);
     }
-
-//    private function _to_hsv($r, $g, $b) {
-//        $h = acos((0.5*(($r-$g)+($r-$b)))/(sqrt((pow(($r-$g),2)+(($r-$b)*($g-$b))))));
-//        $s = 1-(3*((min($r,$g,$b))/($r+$g+$b)));
-//        $v = (1/3)*($r+$g+$b);
-//        return array($h, $s, $v);
-//    }
 
     private function to_hsv($r, $g, $b) {
         $h = 0;
@@ -222,11 +162,11 @@ class NudityFilter {
         $this->last_to = $to;
         $from_idx = -1;
         $to_idx = -1;
-        foreach ($this->merge_regions as $k => $mreg) {
-            if (in_array($from, $mreg)) {
+        foreach ($this->merge_regions as $k => $mr) {
+            if (in_array($from, $mr)) {
                 $from_idx = $k;
             }
-            if (in_array($to, $mreg)) {
+            if (in_array($to, $mr)) {
                 $to_idx = $k;
             }
         }
@@ -234,57 +174,50 @@ class NudityFilter {
         if ($from_idx != -1 && $to_idx != -1 && $from_idx == $to_idx) {
             return;
         }
-//        echo '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;';
         // no element inside $this->merge_regions
         if ($from_idx == -1 && $to_idx == -1) {
             $this->merge_regions[] = array($from, $to); // add new element (array element) to $this->merge_regions array
-//            echo 'array($from,$to) pushed as new element to merge_regions (index: '.(count($this->merge_regions)-1).'), from_idx='.$from_idx.', to_idx='.$to_idx.', from='.$from.', to='.$to.'<br>';
             return;
         }
         // $from exists in $this->merge_regions
         if ($from_idx != -1 && $to_idx == -1) {
             $this->merge_regions[$from_idx][] = $to; // add new element to an array element (identified by $from_idx) inside $this->merge_regions array
-//            echo '$to appended to merge_regions['.$from_idx.'], from_idx='.$from_idx.', to_idx='.$to_idx.', from='.$from.', to='.$to.'<br>';
             return;
         }
         // $to exists in $this->merge_regions
         if ($from_idx == -1 && $to_idx != -1) {
             $this->merge_regions[$to_idx][] = $from;
-//            echo '$from appended to merge_regions['.$to_idx.'], from_idx='.$from_idx.', to_idx='.$to_idx.', from='.$from.', to='.$to.'<br>';
             return;
         }
         // both $to and $from exists, merge them into $from, then empty $this->merge_regions[$to_idx]
         if ($from_idx != -1 && $to_idx != -1 && $from_idx != $to_idx) {
             $this->merge_regions[$from_idx] = array_merge($this->merge_regions[$from_idx], $this->merge_regions[$to_idx]);
-            $this->merge_regions[$to_idx] = array(); // just set to empty array, to keep array key counter
-//            unset($this->merge_regions[$to_idx]);
-//            echo 'array_merge merge_regions['.$from_idx.'] and merge_regions['.$to_idx.'], then empty merge_regions['.$to_idx.'], from_idx='.$from_idx.', to_idx='.$to_idx.', from='.$from.', to='.$to.'<br>';
+            unset($this->merge_regions[$to_idx]);
             return;
         }
     }
 
     private function merge_and_clear() {
-        $this->det_regions = array();
+        $det_regions = array();
         $this->skin_regions = array();
         foreach ($this->merge_regions as $i => $mr) {
-            if (!isset($this->det_regions[$i])) {
-                $this->det_regions[$i] = array();
+            if (!isset($det_regions[$i])) {
+                $det_regions[$i] = array();
             }
             foreach ($mr as $m) {
                 if (!empty($this->detected_regions[$m])) {
-                    $this->det_regions[$i] = array_merge($this->det_regions[$i], $this->detected_regions[$m]);
-//                    $this->detected_regions[$m] = array();
+                    $det_regions[$i] = array_merge($det_regions[$i], $this->detected_regions[$m]);
                 }
-                unset($this->detected_regions[$m]); // error: max execution time 60 secs
+                unset($this->detected_regions[$m]);
             }
         }
         if (!empty($this->detected_regions)) {
             foreach ($this->detected_regions as $dr) {
-                $this->det_regions[] = $dr;
+                $det_regions[] = $dr;
             }
         }
         // only pushes regions which are bigger than a specific amount to the final result
-        foreach ($this->det_regions as $dt) {
+        foreach ($det_regions as $dt) {
             $count_dt = count($dt);
             if ($count_dt > 30) {
                 $this->skin_regions[] = $count_dt;
@@ -302,14 +235,9 @@ class NudityFilter {
             return false;
         }
         // sort the detected regions by size
-//        usort($this->skin_regions, 'bsort');
         rsort($this->skin_regions);
         $total_pixel = $this->img_w * $this->img_h;
         $total_skin = array_sum($this->skin_regions);
-        // count total skin pixels
-//        foreach ($this->skin_regions as $sr) {
-//            $total_skin += count($sr);
-//        }
         // check if there are more than 15% skin pixel in the image
         if (($total_skin/$total_pixel)*100 < 15) {
             return false;
